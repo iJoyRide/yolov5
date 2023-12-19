@@ -42,7 +42,7 @@ ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 #ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
-ROOT = Path('Y:/Yolo/YoloV8CY/yolov8pose/Desktop/yolov5')  # Specify the YOLOv5 root directory path
+ROOT = Path('/app/Desktop/yolov5')  # Specify the YOLOv5 root directory path
 save_dir = ROOT / 'runs/detect'  # Specify the save results directory
 
 
@@ -61,7 +61,7 @@ def run(
         source=ROOT / 'data/images',  # file/dir/URL/glob/screen/0(webcam)
         data=ROOT / 'data/coco128.yaml',  # dataset.yaml path
         imgsz=(640, 640),  # inference size (height, width)
-        conf_thres=0.25,  # confidence threshold
+        conf_thres=0.45,  # confidence threshold
         iou_thres=0.45,  # NMS IOU threshold
         max_det=1000,  # maximum detections per image
         device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
@@ -87,6 +87,7 @@ def run(
         vid_stride=1,  # video frame-rate stride
 ):
     source = str(source)
+    source_base = Path(source)  # Add this line to define source_base
     save_img = not nosave and not source.endswith('.txt')  # save inference images
     is_file = Path(source).suffix[1:] in (IMG_FORMATS + VID_FORMATS)
     is_url = source.lower().startswith(('rtsp://', 'rtmp://', 'http://', 'https://'))
@@ -97,7 +98,7 @@ def run(
 
     # Directories
     save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
-    (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
+    save_dir.mkdir(parents=True, exist_ok=True)  # make dir
 
     # Load model
     device = select_device(device)
@@ -162,8 +163,17 @@ def run(
                 p, im0, frame = path, im0s.copy(), getattr(dataset, 'frame', 0)
 
             p = Path(p)  # to Path
-            save_path = str(save_dir / p.name)  # im.jpg
-            txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # im.txt
+            
+            try:
+                relative_path = p.relative_to(source_base).parent  # Attempt to calculate relative path
+            except ValueError:
+                # Handle the case where source_base is not an ancestor of p
+                relative_path = Path()  # Set to empty path or handle as needed
+            
+            output_path = save_dir / relative_path  # Construct output directory path
+            output_path.mkdir(parents=True, exist_ok=True)  # Create directory if it doesn't exist
+            save_path = str(output_path / p.name) 
+            txt_path = str(output_path / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # updated txt path without 'labels' subdirectory
             s += '%gx%g ' % im.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
             imc = im0.copy() if save_crop else im0  # for save_crop
@@ -179,6 +189,46 @@ def run(
 
                 # Write results
                 for *xyxy, conf, cls in reversed(det):
+                    
+                    # Remap class IDs based on your specified criteria
+                    if cls.item() == 38:
+                        cls = torch.tensor(2, device=cls.device)#backpack(backpack)
+                    elif cls.item() == 13:
+                        cls = torch.tensor(3, device=cls.device)#handbag(handbag)
+                    elif cls.item() == 194:
+                        cls = torch.tensor(3, device=cls.device)#handbag(briefcase)
+                    elif cls.item() == 120:
+                        cls = torch.tensor(4, device=cls.device)#luggage(luggage)
+                    elif cls.item() == 130:
+                        cls = torch.tensor(5, device=cls.device)#stroller(stroller)
+                    elif cls.item() == 20:
+                        cls = torch.tensor(6, device=cls.device)#box(storage box)
+                    elif cls.item() == 159:
+                        cls = torch.tensor(6, device=cls.device)#box(computer box)
+                    elif cls.item() == 192:
+                        cls = torch.tensor(7, device=cls.device)#wheelchair(wheelchair)
+                    # elif cls.item() == 129:
+                    #     cls = torch.tensor(8, device=cls.device)#scooter(scooter)
+                    # elif cls.item() == 46:
+                    #     cls = torch.tensor(9, device=cls.device)#bicycle(bicycle)
+                    # elif cls.item() == 58:
+                    #     cls = torch.tensor(10, device=cls.device)#motorcycle(motorcycle)
+                    # elif cls.item() == 5:
+                    #     cls = torch.tensor(11, device=cls.device)#car(car)
+                    # elif cls.item() == 144:
+                    #     cls = torch.tensor(11, device=cls.device)#car(sportscar)
+                    # elif cls.item() == 5:
+                    #     cls = torch.tensor(12, device=cls.device)#bus(bus)
+                    # elif cls.item() == 65:
+                    #     cls = torch.tensor(13, device=cls.device)#truck(truck)
+                    # elif cls.item() == 87:
+                    #     cls = torch.tensor(13, device=cls.device)#truck(pickup truck)
+                    # elif cls.item() == 188:
+                    #     cls = torch.tensor(13, device=cls.device)#truck(fire truck)
+                    # elif cls.item() == 199:
+                    #     cls = torch.tensor(13, device=cls.device)#truck(heavy truck)
+                    
+                    
                     c = int(cls)  # integer class
                     label = names[c] if hide_conf else f'{names[c]}'
                     confidence = float(conf)
@@ -188,6 +238,10 @@ def run(
                         write_to_csv(p.name, label, confidence_str)
 
                     if save_txt:  # Write to file
+                        # Ensure the directory for the text file exists
+                        txt_dir = Path(txt_path).parent
+                        txt_dir.mkdir(parents=True, exist_ok=True)  # Create directory if it doesn't exist
+
                         xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
                         line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
                         with open(f'{txt_path}.txt', 'a') as f:
@@ -210,24 +264,24 @@ def run(
                 cv2.imshow(str(p), im0)
                 cv2.waitKey(1)  # 1 millisecond
 
-            # Save results (image with detections)
-            if save_img:
-                if dataset.mode == 'image':
-                    cv2.imwrite(save_path, im0)
-                else:  # 'video' or 'stream'
-                    if vid_path[i] != save_path:  # new video
-                        vid_path[i] = save_path
-                        if isinstance(vid_writer[i], cv2.VideoWriter):
-                            vid_writer[i].release()  # release previous video writer
-                        if vid_cap:  # video
-                            fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                            w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                            h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        else:  # stream
-                            fps, w, h = 30, im0.shape[1], im0.shape[0]
-                        save_path = str(Path(save_path).with_suffix('.avi'))  # force *.avi suffix on results videos
-                        vid_writer[i] = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc('X', 'V', 'I', 'D'), fps, (w, h))
-                    vid_writer[i].write(im0)
+            # # Save results (image with detections)
+            # if save_img:
+            #     if dataset.mode == 'image':
+            #         cv2.imwrite(save_path, im0)
+            #     else:  # 'video' or 'stream'
+            #         if vid_path[i] != save_path:  # new video
+            #             vid_path[i] = save_path
+            #             if isinstance(vid_writer[i], cv2.VideoWriter):
+            #                 vid_writer[i].release()  # release previous video writer
+            #             if vid_cap:  # video
+            #                 fps = vid_cap.get(cv2.CAP_PROP_FPS)
+            #                 w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            #                 h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            #             else:  # stream
+            #                 fps, w, h = 30, im0.shape[1], im0.shape[0]
+            #             save_path = str(Path(save_path).with_suffix('.avi'))  # force *.avi suffix on results videos
+            #             vid_writer[i] = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc('X', 'V', 'I', 'D'), fps, (w, h))
+            #         vid_writer[i].write(im0)
 
         # Print time (inference-only)
         LOGGER.info(f"{s}{'' if len(det) else '(no detections), '}{dt[1].dt * 1E3:.1f}ms")
@@ -285,9 +339,11 @@ def main(opt):
 
 if __name__ == '__main__':
     opt = parse_opt()
-    #opt.project = "\\192.168.77.100\Model_Center\Yolo\YoloV8CY\yolov8pose\Desktop\yolov5\runs\detect"
     main(opt)
 
 #python detect.py --weights yolov5x6.pt --classes 0 1 2 3 5 7 24 26 28 --source "Z:\Yolo\YoloV8CY\videos\cam1.mp4" --device 0
 
-#python detect.py --weights yolov5m_Objects365.pt --classes 5 13 20 38 46 55 58 65 129 130 159 192  --source "Z:\Yolo\YoloV8CY\videos\bags001.mp4" --device 0
+#python detect.py --weights yolov5m_Objects365.pt --classes 5 13 20 34 38 46 55 58 65 87 120 129 130 144 159 188 192 199 --source "/app/data_v4/images" --device 0 --save-txt
+
+#python detect.py --weights crowdhuman_yolov5m.pt --classes 1 --source "/app/data_v4/images" --device 0 --save-txt
+
